@@ -1,0 +1,17 @@
+{
+    "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+    "name": "chat",
+    "version": "0.1.0",
+    "dependencies": [
+        "gamenetworkingsockets",
+        "imgui",
+        "glfw3",
+        {
+            "name": "imgui",
+            "features": [
+                "glfw-binding",
+                "opengl3-binding"
+            ]
+        }
+    ]
+}
