@@ -13,7 +13,7 @@ FetchContent_MakeAvailable(googletest)
 
 enable_testing()
 
-add_executable(message_test message_test.cpp)
+add_executable(message_test message_test.cpp message.cpp)
 target_link_libraries(
     message_test
     GTest::gtest_main

@@ -1,21 +1,18 @@
 #ifndef SERVER_H
 #define SERVER_H
 
-// #include "../message.h"
-#include "message.h"
-
 #include <steam/isteamnetworkingutils.h>
 #include <steam/steamnetworkingsockets.h>
 #include <steam/steamnetworkingtypes.h>
 
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <thread>
+#include <vector>
 
-#ifndef STEAMNETWORKINGSOCKETS_OPENSOURCE
-#include <steam/steam_api.h>
-#endif
+#include "message.h"
 
 struct Client {
   std::string name;
@@ -26,13 +23,11 @@ class Server {
  public:
   Server(int port);
   ~Server();
-
-  void start();
-  void stop();
+  void Run();
 
  private:
-  void run();
-
+  void Stop(std::optional<std::string> reason);
+  void Clean();
   static void ConnectionStatusChangedCallback(
       SteamNetConnectionStatusChangedCallback_t* info);
   void OnConnectionStatusChanged(
@@ -40,19 +35,20 @@ class Server {
   void PollIncomingMessages();
   void PollConnectionStateChanges();
 
-  void BroadcastMessage(Message& message);
-  void SendMessage(Message& message, const HSteamNetConnection clientConnection);
+  void HandleIncomingSteamMessage(ISteamNetworkingMessage* steamMessage);
+  void BroadcastMessage(Message& message,
+                        std::vector<HSteamNetConnection> connections);
+  void SendMessage(Message& message,
+                   const HSteamNetConnection clientConnection);
 
- private:
-  ISteamNetworkingSockets* socketInterface = nullptr;
-  ISteamNetworkingUtils* networkingUtils = nullptr;
-  HSteamListenSocket listenSocket = 0u;
-  HSteamNetPollGroup pollGroup = 0u;
-
+  ISteamNetworkingSockets* socketInterface;
+  ISteamNetworkingUtils* networkingUtils;
+  HSteamListenSocket listenSocket;
+  HSteamNetPollGroup pollGroup;
   std::map<HSteamNetConnection, Client> connectedClients;
   std::thread thread;
   int port;
-  bool running = false;
+  bool running;
 };
 
 #endif

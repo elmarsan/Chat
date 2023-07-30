@@ -7,20 +7,22 @@
 #include <ctime>
 #include <functional>
 #include <iostream>
+#include <memory>
+#include <string>
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 
-void App::imguiStyle() {}
+App::App(std::shared_ptr<Client> client) : client(client) { running = false; }
 
-void App::run() {
-  if (!running) setup();
+void App::Run() {
+  if (!running) Setup();
 
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
 
-    frameTick();
+    TickFrame();
     ImGui::Render();
 
     int display_w, display_h;
@@ -32,14 +34,15 @@ void App::run() {
   }
 }
 
-void App::frameTick() {
+void App::TickFrame() {
   ImGui_ImplOpenGL3_NewFrame();
   ImGui_ImplGlfw_NewFrame();
   ImGui::NewFrame();
-  ImGui::Begin("##", nullptr,
-               ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove);
+  ImGui::Begin("##", nullptr, ImGuiWindowFlags_NoDecoration);
   const ImVec2 screenSize = ImGui::GetIO().DisplaySize;
 
+  auto const columnFlags =
+      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize;
   auto const renderColumn = [this](ImVec2 size, ImVec2* siblingSize,
                                    std::function<void()> renderFunc) {
     ImGui::SetNextWindowSize(size);
@@ -53,64 +56,63 @@ void App::frameTick() {
 
   ImVec2 leftCol(screenSize.x * 0.7f, screenSize.y);
   renderColumn(leftCol, nullptr, [this]() {
-    ImGui::Begin("Messages", nullptr,
-                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
+    ImGui::Begin("Messages", nullptr, columnFlags);
     ImVec2 contentRegionAvail = ImGui::GetContentRegionAvail();
     if (ImGui::BeginListBox(
             "##", ImVec2(contentRegionAvail.x, contentRegionAvail.y - 30))) {
       for (const auto& message : client->messages) {
-        std::time_t result = std::time(nullptr);
-        ImGui::TextWrapped("%s %s", std::asctime(std::localtime(&result)),
+        ImGui::TextWrapped("%s %s", std::asctime(std::localtime(&message.time)),
                            message.body.c_str());
       }
       ImGui::EndListBox();
     }
 
-    // Input Text for sending messages
-    static char buf1[64] = "";
-    if (ImGui::InputText("Send", buf1, 64,
+    static char textBuffer[64] = "";
+    if (ImGui::InputText("Send", textBuffer, 64,
                          ImGuiInputTextFlags_EnterReturnsTrue)) {
       std::cout << "Enter key pressed" << std::endl;
-      client->SendMessage(Message("you", buf1));
-      strncpy(buf1, "", 64);
+      client->SendMessage(Message(client->name, textBuffer));
+      strncpy(textBuffer, "", 64);
     }
     ImGui::End();
   });
 
   ImVec2 rightCol(screenSize.x * 0.3f, screenSize.y);
-  renderColumn(rightCol, &leftCol, []() {
-    // Step 6: Begin the second element's ImGui window
-    ImGui::Begin("Users", nullptr,
-                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
-    // Add your ImGui code for the second element here...
-    ImGui::Text("Second Element (30%% width)");
-    ImGui::End();  // End the second element's window
+  renderColumn(rightCol, &leftCol, [this]() {
+    std::string title =
+        std::to_string(client->connectedUsers.size() + 1) + " Users";
+    ImGui::Begin(title.c_str(), nullptr, columnFlags);
+    for (const auto& user : client->connectedUsers) {
+      ImGui::Text(user.c_str());
+    }
+    ImGui::Text("You");
+    ImGui::End();
   });
 
   ImGui::End();
 }
 
-App::~App() { glfwDestroyWindow(window); }
+App::~App() { Clean(); }
 
-void App::clean() {
+void App::Clean() {
   ImGui_ImplOpenGL3_Shutdown();
   ImGui_ImplGlfw_Shutdown();
   ImGui::DestroyContext();
-
   glfwDestroyWindow(window);
   glfwTerminate();
 }
 
-void App::stop() {
+void App::Stop() {
   std::cout << "Closing chat...";
   running = false;
-  clean();
+  Clean();
 }
+
 static void glfwErrorCallback(int error, const char* description) {
   std::cerr << "GLFW Error " << error << ": " << description << std::endl;
 }
 
-void App::setup() {
+void App::Setup() {
   glfwSetErrorCallback(glfwErrorCallback);
   if (!glfwInit()) {
     std::cerr << "Unable to init glfw" << std::endl;
@@ -131,22 +133,14 @@ void App::setup() {
 
   glfwMakeContextCurrent(window);
   glfwSwapInterval(1);
-
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
   ImGui::StyleColorsDark();
-
   ImGui_ImplGlfw_InitForOpenGL(window, true);
   ImGui_ImplOpenGL3_Init(glsl_version);
 
-  // Styles
-  auto textColor = ImVec4(236.f / 255.f, 240.f / 255.f, 241.f / 255.f, 1.0f);
-  auto bodyColor = ImVec4(44.f / 255.f, 62.f / 255.f, 80.f / 255.f, 1.0f);
-  auto areaColor = ImVec4(0.25f, 0.25f, 0.25f, 1.00f);
   ImGuiStyle& style = ImGui::GetStyle();
-  style.Colors[ImGuiCol_Text] = textColor;
-  style.Colors[ImGuiCol_Border] = bodyColor;
-  style.Colors[ImGuiCol_FrameBg] = areaColor;
+  style.WindowMenuButtonPosition = ImGuiDir_None;
 
   running = true;
 }

@@ -8,8 +8,8 @@ build:
 
 .PHONY: run-client
 run-client: build
-	./build/client
+	./build/client $(name)
 
 .PHONY: run-server
 run-server: build
-	./build/server
+	./build/server 

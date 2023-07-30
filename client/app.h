@@ -2,25 +2,25 @@
 #define APP_H
 
 #include <GLFW/glfw3.h>
+#include <algorithm>
+#include <memory>
 
 #include "client.h"
 
 class App {
  public:
-  App() = default;
+  App(std::shared_ptr<Client> client);
   ~App();
-  void run();
-  void clean();
-  void stop();
-  void frameTick();
-  Client* client;
+  void Run();
+  void Stop();
+  void TickFrame();
 
  private:
   GLFWwindow* window;
-  bool running = false;
-  void setup();
-  void imguiStyle();
+  std::shared_ptr<Client> client;
+  bool running ;
+  void Setup();
+  void Clean();
 };
-
 
 #endif

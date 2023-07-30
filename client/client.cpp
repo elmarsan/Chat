@@ -1,51 +1,48 @@
 #include "client.h"
 
+#include <chrono>
 #include <iostream>
-#include <iterator>
+#include <optional>
 #include <string>
 #include <thread>
 
 #include "message.h"
 
+Client::Client(std::string serverAddress, std::string name)
+    : name(name), serverAddress(serverAddress) {
+  socketInterface = nullptr;
+  connection = 0;
+}
+
 static Client* s_Instance = nullptr;
 Client::~Client() {
-  if (m_NetworkThread.joinable()) m_NetworkThread.join();
+  if (thread.joinable()) thread.join();
+  Clean();
 }
 
 void Client::Disconnect() {
   running = false;
-  if (m_NetworkThread.joinable()) m_NetworkThread.join();
+  if (thread.joinable()) thread.join();
 }
 
-void Client::Connect(const std::string& serverAddress) {
+void Client::Connect() {
   if (running) return;
-
-  m_ServerAddress = serverAddress;
-  m_NetworkThread = std::thread([this]() { Run(); });
+  thread = std::thread([this]() { Run(); });
 }
 
 void Client::Run() {
   s_Instance = this;
-
-  std::cout << "Run started\n";
-  ;
-
   SteamDatagramErrMsg errMsg;
   if (!GameNetworkingSockets_Init(nullptr, errMsg)) {
-    std::cerr << "Could not initialize GameNetworkingSockets\n";
-    running = false;
+    Stop("Unable to initialize GameNetworkingSockets");
     return;
   }
 
-  // Select instance to use.  For now we'll always use the default.
-  m_Interface = SteamNetworkingSockets();
+  socketInterface = SteamNetworkingSockets();
 
-  // Start connecting
   SteamNetworkingIPAddr address;
-  if (!address.ParseString(m_ServerAddress.c_str())) {
-    std::cerr << "Invalid IP address - could not parse " << m_ServerAddress
-              << std::endl;
-    running = false;
+  if (!address.ParseString(serverAddress.c_str())) {
+    Stop("Invalid server address");
     return;
   }
 
@@ -53,65 +50,68 @@ void Client::Run() {
   options.SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged,
                  (void*)ConnectionStatusChangedCallback);
 
-  std::cout << "Connecting to server" << std::endl;
-
-  m_Connection = m_Interface->ConnectByIPAddress(address, 1, &options);
-  if (m_Connection == k_HSteamNetConnection_Invalid) {
-    std::cerr << "Invalid IP address - could not parse " << m_ServerAddress
-              << std::endl;
-    running = false;
+  std::cout << "Connecting to server " << serverAddress << std::endl;
+  connection = socketInterface->ConnectByIPAddress(address, 1, &options);
+  if (connection == k_HSteamNetConnection_Invalid) {
+    Stop("Invalid server address");
     return;
   }
-
-  std::cout << "Client running" << std::endl;
 
   running = true;
   while (running) {
     PollIncomingMessages();
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
   }
+  Clean();
+}
 
-  // Clean up
-  m_Interface->CloseConnection(m_Connection, 0, nullptr, false);
+void Client::Clean() {
+  socketInterface->CloseConnection(connection, 0, nullptr, false);
+}
+
+void Client::Stop(std::optional<std::string> reason) {
+  if (reason.has_value()) {
+    std::cout << reason.value() << std::endl;
+  }
+  running = false;
+  Clean();
 }
 
 void Client::SendMessage(Message message) {
   std::string payload = message.serialize();
-  auto res = m_Interface->SendMessageToConnection(
-      m_Connection, payload.data(), payload.size(),
+  auto res = socketInterface->SendMessageToConnection(
+      connection, payload.data(), payload.size(),
       k_nSteamNetworkingSend_Reliable, nullptr);
   messages.push_back(message);
-  std::cout << "SendMsg result: " << res << std::endl;
+  std::cout << "Sending Message: " << payload << std::endl;
+  std::cout << "SendMessage result: " << res << std::endl;
 }
 
 void Client::PollIncomingMessages() {
-  // Process all messages
   while (running) {
     ISteamNetworkingMessage* incomingMessage = nullptr;
-    int messageCount = m_Interface->ReceiveMessagesOnConnection(
-        m_Connection, &incomingMessage, 1);
-    if (messageCount == 0) break;
-
-    if (messageCount < 0) {
-      // messageCount < 0 means critical error?
-      running = false;
-      return;
-    }
-
-    if (incomingMessage->m_cbSize) {
-      std::string payload;
-      payload.assign((const char*)incomingMessage->m_pData,
-                     incomingMessage->m_cbSize);
-      Message message;
-      message.deserialize(payload);
-      messages.push_back(message);
-    }
-
-    incomingMessage->Release();
+    int messageCount = socketInterface->ReceiveMessagesOnConnection(
+        connection, &incomingMessage, 1);
+    if (messageCount <= 0) break;
+    HandleIncomingSteamMessage(incomingMessage);
   }
 }
 
-void Client::PollConnectionStateChanges() { m_Interface->RunCallbacks(); }
+void Client::HandleIncomingSteamMessage(ISteamNetworkingMessage* steamMessage) {
+  if (!steamMessage->m_cbSize) {
+    steamMessage->Release();
+    return;
+  }
+  std::string serialized;
+  serialized.assign((const char*)steamMessage->m_pData, steamMessage->m_cbSize);
+  Message message;
+  message.deserialize(serialized);
+  messages.push_back(message);
+  connectedUsers = message.connectedUsers;
+  steamMessage->Release();
+}
+
+void Client::PollConnectionStateChanges() { socketInterface->RunCallbacks(); }
 
 void Client::ConnectionStatusChangedCallback(
     SteamNetConnectionStatusChangedCallback_t* info) {
@@ -120,6 +120,20 @@ void Client::ConnectionStatusChangedCallback(
 
 void Client::OnConnectionStatusChanged(
     SteamNetConnectionStatusChangedCallback_t* status) {
-  std::cout << "OnConnectionStatusChanged" << status->m_info.m_eState
-            << std::endl;
+  switch (status->m_info.m_eState) {
+    case k_ESteamNetworkingConnectionState_None:
+      break;
+    case k_ESteamNetworkingConnectionState_ClosedByPeer:
+    case k_ESteamNetworkingConnectionState_ProblemDetectedLocally: {
+      Stop("Network problem detected");
+      break;
+    }
+    case k_ESteamNetworkingConnectionState_Connecting:
+      break;
+    case k_ESteamNetworkingConnectionState_Connected:
+      std::cout << "Connected to server" << std::endl;
+      break;
+    default:
+      break;
+  }
 }

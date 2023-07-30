@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <ctime>
 #include <iostream>
 #include <string>
 
@@ -14,73 +15,80 @@
 
 static Server* s_Instance = nullptr;
 
-Server::Server(int port) : port(port) {}
+Server::Server(int port) : port(port) {
+  socketInterface = nullptr;
+  networkingUtils = nullptr;
+  listenSocket = 0u;
+  pollGroup = 0u;
+  running = false;
+}
 
 Server::~Server() {
   if (thread.joinable()) thread.join();
 }
 
-void Server::start() {
+void Server::Run() {
   if (running) return;
 
-  thread = std::thread([this]() { run(); });
+  thread = std::thread([this]() {
+    s_Instance = this;
+    running = true;
+
+    SteamDatagramErrMsg errMsg;
+    if (!GameNetworkingSockets_Init(nullptr, errMsg)) {
+      Stop(errMsg);
+      return;
+    }
+    // TODO: error handling here
+    socketInterface = SteamNetworkingSockets();
+    networkingUtils = SteamNetworkingUtils();
+
+    if (!networkingUtils) {
+      Stop("Unable to init networkingUtils");
+      return;
+    }
+
+    SteamNetworkingIPAddr serverLocalAddress;
+    serverLocalAddress.Clear();
+    serverLocalAddress.m_port = port;
+
+    SteamNetworkingConfigValue_t options;
+    options.SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged,
+                   (void*)Server::ConnectionStatusChangedCallback);
+
+    listenSocket =
+        socketInterface->CreateListenSocketIP(serverLocalAddress, 1, &options);
+
+    if (listenSocket == k_HSteamListenSocket_Invalid) {
+      Stop("Unable to create listen socket");
+      return;
+    }
+
+    pollGroup = socketInterface->CreatePollGroup();
+    if (pollGroup == k_HSteamNetPollGroup_Invalid) {
+      Stop("Unable to create poll group");
+      return;
+    }
+
+    std::cout << "Server listening on port " << port << std::endl;
+    while (running) {
+      PollIncomingMessages();
+      PollConnectionStateChanges();
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    Clean();
+  });
 }
 
-void Server::stop() { running = false; }
-
-void Server::run() {
-  s_Instance = this;
-  running = true;
-
-  SteamDatagramErrMsg errMsg;
-  if (!GameNetworkingSockets_Init(nullptr, errMsg)) {
-    std::cout << errMsg << std::endl;
-    running = false;
-    return;
+void Server::Stop(std::optional<std::string> reason) {
+  if (reason.has_value()) {
+    std::cout << reason.value() << std::endl;
   }
-  // TODO: error handling here
-  socketInterface = SteamNetworkingSockets();
-  networkingUtils = SteamNetworkingUtils();
+  running = false;
+  Clean();
+}
 
-  if (!networkingUtils) {
-    std::cout << "Unable to init networkingUtils" << std::endl;
-    running = false;
-    return;
-  }
-
-  SteamNetworkingIPAddr serverLocalAddress;
-  serverLocalAddress.Clear();
-  serverLocalAddress.m_port = port;
-
-  SteamNetworkingConfigValue_t options;
-  options.SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged,
-                 (void*)Server::ConnectionStatusChangedCallback);
-
-  listenSocket =
-      socketInterface->CreateListenSocketIP(serverLocalAddress, 1, &options);
-
-  if (listenSocket == k_HSteamListenSocket_Invalid) {
-    std::cout << "Fatal error: Failed to listen on port " << port;
-    running = false;
-    return;
-  }
-
-  pollGroup = socketInterface->CreatePollGroup();
-  if (pollGroup == k_HSteamNetPollGroup_Invalid) {
-    std::cout << "Fatal error: Failed to create poll group on port " << port;
-    running = false;
-    return;
-  }
-
-  std::cout << "Server listening on port " << port << std::endl;
-
-  while (running) {
-    PollIncomingMessages();
-    PollConnectionStateChanges();
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  }
-
-  // Clear
+void Server::Clean() {
   connectedClients.clear();
   socketInterface->CloseListenSocket(listenSocket);
   listenSocket = k_HSteamListenSocket_Invalid;
@@ -93,33 +101,34 @@ void Server::PollIncomingMessages() {
     ISteamNetworkingMessage* incomingMsg = nullptr;
     int msgCount =
         socketInterface->ReceiveMessagesOnPollGroup(pollGroup, &incomingMsg, 1);
-    if (msgCount == 0) break;
-
-    if (msgCount < 0) {
-      std::cerr << "While polling incoming messages\n";
-      running = false;
-      return;
-    }
-
-    std::cout << "Received " << msgCount << " messages\n";
-
+    if (msgCount <= 0) break;
     auto itClient = connectedClients.find(incomingMsg->m_conn);
     if (itClient == connectedClients.end()) {
-      std::cout << "ERROR: Received data from unregistered client\n";
       continue;
     }
-
-    // TODO: data received callback
-    if (incomingMsg->m_cbSize) {
-      std::string msgStr;
-      msgStr.assign((const char*)incomingMsg->m_pData, incomingMsg->m_cbSize);
-      std::cout << "Received msg: " << msgStr.c_str() << "\n";
-      Message message("server", "thanks for your message bro");
-      SendMessage(message, incomingMsg->GetConnection());
-    }
-
-    incomingMsg->Release();
+    HandleIncomingSteamMessage(incomingMsg);
   }
+}
+
+void Server::HandleIncomingSteamMessage(ISteamNetworkingMessage* steamMessage) {
+  if (!steamMessage->m_cbSize) {
+    steamMessage->Release();
+    return;
+  }
+  std::string serialized;
+  serialized.assign((const char*)steamMessage->m_pData, steamMessage->m_cbSize);
+  Message message;
+  message.deserialize(serialized);
+  auto broadcastConnections = std::vector<HSteamNetConnection>();
+  for (const auto& pair : connectedClients) {
+    message.connectedUsers.push_back(pair.second.name);
+
+    if (pair.first != steamMessage->GetConnection()) {
+      broadcastConnections.push_back(pair.first);
+    }
+  }
+  steamMessage->Release();
+  BroadcastMessage(message, broadcastConnections);
 }
 
 void Server::ConnectionStatusChangedCallback(
@@ -131,8 +140,6 @@ void Server::OnConnectionStatusChanged(
     SteamNetConnectionStatusChangedCallback_t* status) {
   switch (status->m_info.m_eState) {
     case k_ESteamNetworkingConnectionState_Connecting: {
-      std::cout << "Status changed Connecting" << std::endl;
-
       // Accept connection
       if (socketInterface->AcceptConnection(status->m_hConn) != k_EResultOK) {
         socketInterface->CloseConnection(status->m_hConn, 0, nullptr, false);
@@ -154,42 +161,36 @@ void Server::OnConnectionStatusChanged(
       auto& client = connectedClients[status->m_hConn];
       client.id = connectionInfo.m_szConnectionDescription;
       client.name = "Client " + std::to_string(connectedClients.size() + 1);
-
-      // TODO: client connected callback
-      break;
-    }
-
+    };
     case k_ESteamNetworkingConnectionState_Connected:
-      std::cout << "Status changed Connected" << std::endl;
+      std::cout << "Client connected" << std::endl;
       break;
-
     case k_ESteamNetworkingConnectionState_ClosedByPeer:
-      std::cout << "Status changed ClosedByPeer" << std::endl;
+      std::cout << "Client closed connection" << std::endl;
     case k_ESteamNetworkingConnectionState_ProblemDetectedLocally: {
-      std::cout << "Status changed ProblemDetectedLocally" << std::endl;
+      std::cout << "Network problem detected" << std::endl;
       socketInterface->CloseConnection(status->m_hConn, 0, nullptr, false);
       break;
     };
+    default:
+      break;
   }
 }
 
 void Server::PollConnectionStateChanges() { socketInterface->RunCallbacks(); }
 
 void Server::SendMessage(Message& message,
-                           const HSteamNetConnection clientConnection) {
-  std::string payload = message.serialize();
-
-  std::cout << "Sending: " << payload << std::endl;
-
+                         const HSteamNetConnection clientConnection) {
+  std::string serialized = message.serialize();
   auto result = socketInterface->SendMessageToConnection(
-      clientConnection, payload.data(), payload.size(),
+      clientConnection, serialized.data(), serialized.size(),
       k_nSteamNetworkingSend_Reliable, nullptr);
-
-  std::cout << "SendMessageV2 result: " << result << std::endl;
+  std::cout << "SendMessage result: " << result << std::endl;
 }
 
-void Server::BroadcastMessage(Message& message) {
-  for (const auto& pair : connectedClients) {
-    SendMessage(message, pair.first);
+void Server::BroadcastMessage(Message& message,
+                              std::vector<HSteamNetConnection> connections) {
+  for (const auto& connection : connections) {
+    SendMessage(message, connection);
   }
 }
