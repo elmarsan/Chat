@@ -9,9 +9,10 @@ class App {
  public:
   App() = default;
   ~App();
-  void start();
+  void run();
   void clean();
   void stop();
+  void frameTick();
   Client* client;
 
  private:

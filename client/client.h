@@ -8,6 +8,8 @@
 #include <thread>
 #include <vector>
 
+#include "message.h"
+
 class Client {
  public:
   Client() = default;
@@ -15,9 +17,9 @@ class Client {
 
   void Connect(const std::string &serverAddress);
   void Disconnect();
-  void SendMsg(const char *str);
+  void SendMessage(Message message);
 
-  std::vector<std::string> messages;
+  std::vector<Message> messages;
 
  private:
   void Run();

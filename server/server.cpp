@@ -10,6 +10,8 @@
 #include <iostream>
 #include <string>
 
+#include "message.h"
+
 static Server* s_Instance = nullptr;
 
 Server::Server(int port) : port(port) {}
@@ -112,19 +114,13 @@ void Server::PollIncomingMessages() {
       std::string msgStr;
       msgStr.assign((const char*)incomingMsg->m_pData, incomingMsg->m_cbSize);
       std::cout << "Received msg: " << msgStr.c_str() << "\n";
-      SendMessage("Grasias amigoo", incomingMsg->GetConnection());
+      Message message("server", "thanks for your message bro");
+      SendMessage(message, incomingMsg->GetConnection());
     }
 
     incomingMsg->Release();
   }
 }
-
-// void Server::SendMsgToClient(const char* str, HSteamNetConnection clientConn)
-// { auto res = socketInterface->SendMessageToConnection(
-//     clientConn, str, (uint32)strlen(str), k_nSteamNetworkingSend_Reliable,
-//     nullptr);
-// std::cout << "SendMsg result: " << res << std::endl;
-// }
 
 void Server::ConnectionStatusChangedCallback(
     SteamNetConnectionStatusChangedCallback_t* info) {
@@ -179,30 +175,21 @@ void Server::OnConnectionStatusChanged(
 
 void Server::PollConnectionStateChanges() { socketInterface->RunCallbacks(); }
 
-void Server::SendMessage(const char* str,
-                         const HSteamNetConnection clientConnection) {
-  // if (body.size() == 0) {
-  //   return;
-  // }
-  // int size = sizeof(body);
-  // ISteamNetworkingMessage* msg = networkingUtils->AllocateMessage(size);
-  // msg->m_conn = clientConnection;
-  // msg->m_nFlags =
-  //     k_nSteamNetworkingSend_NoNagle | k_nSteamNetworkingSend_Reliable;
-  // msg->m_cbSize = size;
-  // std::memcpy(msg->m_pData, &body, size);
-  // socketInterface->SendMessages(1, &msg, nullptr);
-  // // msg->Release();
-  //
-  auto res = socketInterface->SendMessageToConnection(
-      clientConnection, str, (uint32)strlen(str),
+void Server::SendMessage(Message& message,
+                           const HSteamNetConnection clientConnection) {
+  std::string payload = message.serialize();
+
+  std::cout << "Sending: " << payload << std::endl;
+
+  auto result = socketInterface->SendMessageToConnection(
+      clientConnection, payload.data(), payload.size(),
       k_nSteamNetworkingSend_Reliable, nullptr);
-  std::cout << "SendMsg result: " << res << std::endl;
+
+  std::cout << "SendMessageV2 result: " << result << std::endl;
 }
 
-// Send to all clients
-void Server::SendMessageToAll(const char* str) {
+void Server::BroadcastMessage(Message& message) {
   for (const auto& pair : connectedClients) {
-    SendMessage(str, pair.first);
+    SendMessage(message, pair.first);
   }
 }

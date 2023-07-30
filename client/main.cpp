@@ -9,5 +9,5 @@ int main() {
 
   App app;
   app.client = &client;
-  app.start();
+  app.run();
 }

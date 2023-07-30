@@ -5,6 +5,8 @@
 #include <string>
 #include <thread>
 
+#include "message.h"
+
 static Client* s_Instance = nullptr;
 Client::~Client() {
   if (m_NetworkThread.joinable()) m_NetworkThread.join();
@@ -73,11 +75,12 @@ void Client::Run() {
   m_Interface->CloseConnection(m_Connection, 0, nullptr, false);
 }
 
-void Client::SendMsg(const char* str) {
+void Client::SendMessage(Message message) {
+  std::string payload = message.serialize();
   auto res = m_Interface->SendMessageToConnection(
-      m_Connection, str, (uint32)strlen(str), k_nSteamNetworkingSend_Reliable,
-      nullptr);
-  messages.push_back(std::string(str));
+      m_Connection, payload.data(), payload.size(),
+      k_nSteamNetworkingSend_Reliable, nullptr);
+  messages.push_back(message);
   std::cout << "SendMsg result: " << res << std::endl;
 }
 
@@ -96,18 +99,14 @@ void Client::PollIncomingMessages() {
     }
 
     if (incomingMessage->m_cbSize) {
-      std::string msgStr;
-      msgStr.assign((const char*)incomingMessage->m_pData,
-                    incomingMessage->m_cbSize);
-      std::cout << "Received msg: " << msgStr.c_str() << "\n";
-
-      // std::string msgStr;
-      // msgStr.assign((const char*)incomingMessage->m_pData,
-      //               incomingMessage->m_cbSize);
-      // std::cout << "Receive msg: " << msgStr << "\n";
-      messages.push_back(msgStr);
+      std::string payload;
+      payload.assign((const char*)incomingMessage->m_pData,
+                     incomingMessage->m_cbSize);
+      Message message;
+      message.deserialize(payload);
+      messages.push_back(message);
     }
-    // Release when done
+
     incomingMessage->Release();
   }
 }
@@ -124,19 +123,3 @@ void Client::OnConnectionStatusChanged(
   std::cout << "OnConnectionStatusChanged" << status->m_info.m_eState
             << std::endl;
 }
-
-// void Client::SendMsg2(const Message& msg) {
-// std::cout <<"Sender: " << msg.sender << std::endl;
-// std::cout << "Body: " << msg.body << std::endl;
-
-// auto* data = msg.serialize();
-
-// const void* pData = reinterpret_cast<const void*>(&msg);
-//  auto res = m_Interface->SendMessageToConnection(
-//      m_Connection, data, (uint32)sizeof(data),
-//      k_nSteamNetworkingSend_Reliable, nullptr);
-
-// delete[] static_cast<char*>(data);
-
-//  std::cout << "SendMsg result: " << res << std::endl;
-// }

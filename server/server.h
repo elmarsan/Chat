@@ -1,6 +1,9 @@
 #ifndef SERVER_H
 #define SERVER_H
 
+// #include "../message.h"
+#include "message.h"
+
 #include <steam/isteamnetworkingutils.h>
 #include <steam/steamnetworkingsockets.h>
 #include <steam/steamnetworkingtypes.h>
@@ -36,13 +39,9 @@ class Server {
       SteamNetConnectionStatusChangedCallback_t* info);
   void PollIncomingMessages();
   void PollConnectionStateChanges();
-  // void SendMsgToClient(const char* str, HSteamNetConnection clientConn);
 
-  // ////////////////////////////
-  //        Messaging methods
-  // ////////////////////////////
-  void SendMessage(const char* str, const HSteamNetConnection clientConnection);
-  void SendMessageToAll(const char* str);
+  void BroadcastMessage(Message& message);
+  void SendMessage(Message& message, const HSteamNetConnection clientConnection);
 
  private:
   ISteamNetworkingSockets* socketInterface = nullptr;
