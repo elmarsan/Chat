@@ -3,10 +3,7 @@
 #include <steam/isteamnetworkingutils.h>
 #include <steam/steamclientpublic.h>
 #include <steam/steamnetworkingtypes.h>
-#include <unistd.h>
 
-#include <algorithm>
-#include <cstring>
 #include <ctime>
 #include <iostream>
 #include <string>

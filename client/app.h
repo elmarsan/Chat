@@ -2,6 +2,7 @@
 #define APP_H
 
 #include <GLFW/glfw3.h>
+
 #include <algorithm>
 #include <memory>
 
@@ -18,7 +19,7 @@ class App {
  private:
   GLFWwindow* window;
   std::shared_ptr<Client> client;
-  bool running ;
+  bool running;
   void Setup();
   void Clean();
 };

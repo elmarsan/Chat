@@ -5,12 +5,10 @@
 #include <steam/steamnetworkingsockets.h>
 #include <steam/steamnetworkingtypes.h>
 
-#include <functional>
 #include <map>
 #include <optional>
 #include <string>
 #include <thread>
-#include <vector>
 
 #include "message.h"
 

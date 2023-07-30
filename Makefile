@@ -13,3 +13,7 @@ run-client: build
 .PHONY: run-server
 run-server: build
 	./build/server 
+
+.PHONY: fmt
+fmt:
+	clang-format -i common/**.h common/**.cpp server/**.h server/**.cpp client/**.h client/**.cpp  

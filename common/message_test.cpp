@@ -8,11 +8,17 @@ TEST(MessageTest, Serialize) {
   message.time = timestamp;
   message.connectedUsers = {"Alice", "Paco"};
   auto serialized = message.serialize();
-  EXPECT_STREQ(serialized.c_str(), "{\"body\":\"Hello chat!\",\"connected_users\":[\"Alice\",\"Paco\"],\"time\":1690718901,\"username\":\"Bob\"}");
+  EXPECT_STREQ(serialized.c_str(),
+               "{\"body\":\"Hello "
+               "chat!\",\"connected_users\":[\"Alice\",\"Paco\"],\"time\":"
+               "1690718901,\"username\":\"Bob\"}");
 }
 
 TEST(MessageTest, Deserialize) {
-    std::string serialized = "{\"body\":\"Hello chat!\",\"connected_users\":[\"Alice\",\"Paco\"],\"time\":1690718901,\"username\":\"Bob\"}";
+  std::string serialized =
+      "{\"body\":\"Hello "
+      "chat!\",\"connected_users\":[\"Alice\",\"Paco\"],\"time\":1690718901,"
+      "\"username\":\"Bob\"}";
   Message message;
   message.deserialize(serialized);
   EXPECT_STREQ("Bob", message.username.c_str());
