@@ -10,7 +10,9 @@
 
 class App {
  public:
-  App(std::shared_ptr<Client> client);
+     // Why is "client" a shared_ptr? Why not a unique_ptr? From looking at
+     // main() it seems ownership is wholly transferred to app.
+  App(std::unique_ptr<Client> client);
   ~App();
   void Run();
   void Stop();

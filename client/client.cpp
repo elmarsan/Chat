@@ -60,6 +60,8 @@ void Client::Run() {
   running = true;
   while (running) {
     PollIncomingMessages();
+    // Just fyi, a nicer way to do this without polling and using sleep() could
+    // be via condition variables: https://en.cppreference.com/w/cpp/thread/condition_variable
     std::this_thread::sleep_for(std::chrono::milliseconds(250));
   }
   Clean();

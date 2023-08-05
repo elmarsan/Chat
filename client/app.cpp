@@ -14,7 +14,7 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 
-App::App(std::shared_ptr<Client> client) : client(client) { running = false; }
+App::App(std::unique_ptr<Client> client) : client(std::move(client)) { running = false; }
 
 void App::Run() {
   if (!running) Setup();
@@ -39,7 +39,8 @@ void App::TickFrame() {
   ImGui_ImplGlfw_NewFrame();
   ImGui::NewFrame();
   ImGui::Begin("##", nullptr, ImGuiWindowFlags_NoDecoration);
-  const ImVec2 screenSize = ImGui::GetIO().DisplaySize;
+  // You probably don't want to copy the whole struct, so just take a const ref.
+  const ImVec2& screenSize = ImGui::GetIO().DisplaySize;
 
   auto const columnFlags =
       ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize;
