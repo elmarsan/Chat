@@ -99,6 +99,7 @@ void Server::PollIncomingMessages() {
     int msgCount =
         socketInterface->ReceiveMessagesOnPollGroup(pollGroup, &incomingMsg, 1);
     if (msgCount <= 0) break;
+    // FYI in c++20 you have .contains().
     auto itClient = connectedClients.find(incomingMsg->m_conn);
     if (itClient == connectedClients.end()) {
       continue;

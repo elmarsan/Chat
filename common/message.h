@@ -8,7 +8,9 @@
 class Message {
  public:
   Message() = default;
-  Message(const std::string username, const std::string body);
+  // Use non-const arguments so that you can then std::move() the strings
+  // into the member variables. See: https://youtu.be/xnqTKD8uD64
+  Message(std::string username, std::string body);
   ~Message() = default;
 
   std::string username;
@@ -16,7 +18,8 @@ class Message {
   std::time_t time;
   std::vector<std::string> connectedUsers;
 
-  std::string serialize();
+  std::string serialize() const;  // declare a method as "const" when it doesn't
+                                  // modify any of the class's member variables.
   void deserialize(std::string data);
 };
 

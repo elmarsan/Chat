@@ -15,7 +15,7 @@ int main(int argc, char* argv[]) {
     std::cerr << "Client name cannot be empty" << std::endl;
     return EXIT_FAILURE;
   }
-  const auto client = std::make_shared<Client>("127.0.0.1:63333", name);
+  auto client = std::make_unique<Client>("127.0.0.1:63333", name);
   client->Connect();
   App app(client);
   app.Run();

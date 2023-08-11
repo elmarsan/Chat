@@ -5,12 +5,12 @@
 
 #include "../vendor/nlohmann/json.hpp"
 
-Message::Message(const std::string username, const std::string body)
-    : username(username), body(body) {
+Message::Message(std::string username, std::string body)
+    : username(std::move(username)), body(std::move(body)) {
   time = std::time(NULL);
 }
 
-std::string Message::serialize() {
+std::string Message::serialize() const {
   nlohmann::json j;
   j["username"] = username;
   j["body"] = body;
